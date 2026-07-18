@@ -42,7 +42,12 @@ export function RegisterForm() {
     setError(null)
 
     const normalizedEmail = email.trim().toLowerCase()
-    const normalizedName = name.trim()
+    const nickname = name.trim()
+
+    if (!nickname) {
+      setError("Укажите никнейм")
+      return
+    }
 
     if (password.length < 8) {
       setError("Пароль должен содержать минимум 8 символов")
@@ -53,7 +58,7 @@ export function RegisterForm() {
 
     try {
       const { error: authError } = await signUp.email({
-        name: normalizedName || normalizedEmail.split("@")[0],
+        name: nickname,
         email: normalizedEmail,
         password,
       })
@@ -76,7 +81,8 @@ export function RegisterForm() {
     }
   }
 
-  const isFormValid = email.trim().length > 0 && password.length >= 8
+  const isFormValid =
+    name.trim().length > 0 && email.trim().length > 0 && password.length >= 8
 
   return (
     <section className="w-full max-w-[420px]">
@@ -104,25 +110,23 @@ export function RegisterForm() {
               htmlFor="register-name"
               className="text-sm font-medium text-white/70"
             >
-              Имя
-              <span className="ml-2 text-xs font-normal text-white/25">
-                необязательно
-              </span>
+              Никнейм
             </label>
 
             <Input
               id="register-name"
               name="name"
               type="text"
-              autoComplete="name"
+              autoComplete="nickname"
               autoFocus
+              required
               disabled={loading}
               value={name}
               onChange={(event) => {
                 setName(event.target.value)
                 if (error) setError(null)
               }}
-              placeholder="Ваше имя"
+              placeholder="Как к вам обращаться"
               className={fieldClassName}
             />
           </div>
@@ -198,7 +202,11 @@ export function RegisterForm() {
                 <div
                   key={level}
                   className={`h-1 flex-1 rounded-full transition-colors ${
-                    passwordStrength >= level ? "bg-white/70" : "bg-white/8"
+                    passwordStrength >= level
+                      ? passwordStrength >= 3
+                        ? "bg-emerald-400"
+                        : "bg-white/70"
+                      : "bg-white/8"
                   }`}
                 />
               ))}

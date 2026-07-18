@@ -1,20 +1,25 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import {
   ArrowUp,
+  Eraser,
   MessageSquare,
   Mic,
   MoreHorizontal,
+  RotateCcw,
+  Square,
   Video,
 } from "lucide-react"
 
+import { AnnaChatPanel } from "@/components/anna/anna-chat-panel"
 import { AnnaStage } from "@/components/anna/anna-stage"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -33,14 +38,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useAnamSession, type SessionPhase } from "@/hooks/use-anam-session"
-import { useSession } from "@/lib/auth-client"
 import type { ChatMessage } from "@/lib/agent-api"
+import {
+  getConversation,
+  newConversationId,
+  upsertConversation,
+} from "@/lib/conversations"
 import { cn } from "@/lib/utils"
 
 const VIDEO_ID = "anna-live-video"
+const ACTIVE_KEY = "nullxes.activeConversationId"
 
-function phaseLabel(phase: SessionPhase, videoOn: boolean, micOn: boolean) {
-  if (!videoOn) return "Preview"
+function phaseLabel(phase: SessionPhase, sessionOn: boolean, micOn: boolean) {
+  if (!sessionOn) return "Idle"
   if (phase === "connecting") return "Connecting"
   if (phase === "listening") return "Listening"
   if (phase === "thinking") return "Thinking"
@@ -52,71 +62,109 @@ function phaseLabel(phase: SessionPhase, videoOn: boolean, micOn: boolean) {
 }
 
 export function AnnaHome() {
-  const { data: session } = useSession()
-  const userName = session?.user?.name?.trim() || ""
-
+  const reactId = useId()
+  const [conversationId, setConversationId] = useState("")
   const [query, setQuery] = useState("")
   const [asking, setAsking] = useState(false)
-  const [videoOn, setVideoOn] = useState(true)
+  const [sessionOn, setSessionOn] = useState(false)
   const [micOn, setMicOn] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [turns, setTurns] = useState<ChatMessage[]>([])
 
-  const { phase, error, connected, askText, restart } = useAnamSession({
+  const {
+    phase,
+    error,
+    connected,
+    askText,
+    restart,
+    stop,
+    clearHistory,
+    interrupt,
+    loadHistory,
+  } = useAnamSession({
     videoElementId: VIDEO_ID,
-    enabled: videoOn,
+    enabled: sessionOn,
     micEnabled: micOn,
     onTurns: setTurns,
   })
 
-  const label = phaseLabel(phase, videoOn, micOn)
+  // restore / create conversation id
+  useEffect(() => {
+    const fromUrl =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("c")
+        : null
+    const stored =
+      typeof window !== "undefined" ? localStorage.getItem(ACTIVE_KEY) : null
+    const id = fromUrl || stored || newConversationId()
+    setConversationId(id)
+    localStorage.setItem(ACTIVE_KEY, id)
+    const existing = getConversation(id)
+    if (existing?.messages?.length) {
+      setTurns(existing.messages)
+      loadHistory(existing.messages)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reactId])
+
+  // persist turns → Conversations
+  useEffect(() => {
+    if (!conversationId || turns.length === 0) return
+    upsertConversation(conversationId, turns)
+    localStorage.setItem(ACTIVE_KEY, conversationId)
+  }, [conversationId, turns])
+
+  const label = phaseLabel(phase, sessionOn, micOn)
   const online =
-    videoOn && connected && phase !== "error" && phase !== "connecting"
+    sessionOn && connected && phase !== "error" && phase !== "connecting"
+  const connecting = sessionOn && phase === "connecting"
 
-  const detailLine = useMemo(() => {
-    if (error) return error
-    if (!videoOn) return "Preview · включи video для live + chat"
-    if (phase === "connecting") return "Подключение NULLXES…"
-    if (micOn) return "Говори в микрофон — ответ через brain NULLXES"
-    if (userName) return `${userName} · пиши в чат или включи mic`
-    return "Пиши в чат или включи mic"
-  }, [error, videoOn, phase, micOn, userName])
+  const startSession = () => setSessionOn(true)
 
-  const onAsk = async () => {
-    const text = query.trim()
-    if (!text || asking) return
+  const stopSession = async () => {
+    setMicOn(false)
+    setSessionOn(false)
+    await stop()
+  }
+
+  const onAsk = async (text?: string) => {
+    const value = (text ?? query).trim()
+    if (!value || asking) return
     setAsking(true)
-    setQuery("")
+    if (!text) setQuery("")
     setChatOpen(true)
     try {
-      await askText(text)
+      await askText(value)
     } finally {
       setAsking(false)
     }
   }
 
+  const onNewChat = () => {
+    interrupt()
+    clearHistory()
+    const id = newConversationId()
+    setConversationId(id)
+    localStorage.setItem(ACTIVE_KEY, id)
+    setChatOpen(true)
+  }
+
   return (
     <TooltipProvider>
-      <div className="relative flex min-h-dvh flex-col bg-black text-white">
-        <header className="flex items-center justify-end gap-4 px-6 pt-5 md:px-10">
-          <p className="max-w-[70vw] truncate text-right text-[11px] text-white/35">
-            {detailLine}
-          </p>
-        </header>
-
-        <main className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-36 pt-6 md:px-8 md:pt-10">
-          <div className="pointer-events-none absolute left-4 top-[28%] z-10 max-w-48 md:left-10 md:top-[32%]">
-            <h1 className="font-heading text-4xl font-medium tracking-tight text-white md:text-5xl">
+      <div className="relative flex h-full min-h-0 flex-col bg-black text-white">
+        <header className="flex shrink-0 items-start justify-between gap-3 px-4 pt-4 sm:px-6 md:px-8">
+          <div className="min-w-0">
+            <h1 className="font-heading text-3xl font-medium tracking-tight text-white sm:text-4xl md:text-5xl">
               Anna Maria
             </h1>
-            <p className="mt-2 text-sm text-white/45">Digital Executive</p>
-            <div className="mt-4 flex items-center gap-2">
+            <p className="mt-1 text-sm text-white/45">Digital Executive</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <span
                 className={cn(
                   "size-1.5 rounded-full",
                   online
                     ? "bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]"
-                    : phase === "connecting"
+                    : connecting
                       ? "bg-amber-400"
                       : "bg-white/35"
                 )}
@@ -127,18 +175,95 @@ export function AnnaHome() {
               >
                 {label}
               </Badge>
+              <Badge
+                variant="secondary"
+                className="normal-case tracking-normal text-white/35"
+              >
+                ElevenLabs · zEDqu…
+              </Badge>
             </div>
           </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="rounded-lg bg-white/5 text-white hover:bg-white/10"
+            onClick={() => setChatOpen(true)}
+          >
+            <MessageSquare className="size-3.5" />
+            Chat
+          </Button>
+        </header>
 
+        <main className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col px-4 pb-28 pt-4 sm:px-6 md:px-8 md:pb-32">
           <AnnaStage
             videoElementId={VIDEO_ID}
-            live={videoOn && connected}
-            className="mx-auto aspect-16/10 w-full max-w-4xl shadow-[0_40px_120px_rgba(0,0,0,0.55)] md:mt-4"
+            live={sessionOn && connected}
+            className="mx-auto aspect-video w-full max-h-[min(58dvh,640px)] max-w-4xl shadow-[0_40px_120px_rgba(0,0,0,0.55)] sm:aspect-16/10"
           />
+
+          {error ? (
+            <div className="mx-auto mt-4 w-full max-w-4xl rounded-xl border border-amber-400/20 bg-amber-400/8 px-4 py-3 text-sm text-amber-100/90">
+              {error}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-lg bg-white/10 text-white hover:bg-white/15"
+                  onClick={() => void stopSession()}
+                >
+                  Stop
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-lg bg-white text-black hover:bg-white/90"
+                  onClick={() => {
+                    void (async () => {
+                      await stopSession()
+                      setTimeout(() => setSessionOn(true), 800)
+                    })()
+                  }}
+                >
+                  Retry Start
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </main>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-5 md:pb-8">
-          <div className="pointer-events-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl bg-zinc-900/90 p-2 ring-1 ring-white/10 backdrop-blur-md md:gap-3 md:p-2.5">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-5">
+          <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 rounded-2xl bg-zinc-900/95 p-2 ring-1 ring-white/10 backdrop-blur-md sm:flex-nowrap sm:gap-2.5 sm:p-2.5">
+            <Button
+              type="button"
+              variant="secondary"
+              className={cn(
+                "h-11 shrink-0 rounded-full px-4 text-xs font-medium tracking-wide normal-case",
+                sessionOn
+                  ? "bg-red-500/20 text-red-200 hover:bg-red-500/30"
+                  : "bg-white text-black hover:bg-white/90"
+              )}
+              disabled={connecting}
+              onClick={() => {
+                if (sessionOn) void stopSession()
+                else startSession()
+              }}
+            >
+              {sessionOn ? (
+                <>
+                  <Square className="size-3.5 fill-current" />
+                  <span>Stop</span>
+                </>
+              ) : (
+                <>
+                  <Video className="size-3.5" />
+                  <span>Start</span>
+                </>
+              )}
+            </Button>
+
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -146,14 +271,12 @@ export function AnnaHome() {
                     type="button"
                     variant="secondary"
                     size="icon"
+                    disabled={!sessionOn || !connected}
                     className={cn(
-                      "size-11 shrink-0 rounded-full bg-zinc-800 text-white hover:bg-zinc-700",
+                      "size-11 shrink-0 rounded-full bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-40",
                       micOn && "ring-2 ring-emerald-400/50"
                     )}
-                    onClick={() => {
-                      if (!videoOn) setVideoOn(true)
-                      setMicOn((v) => !v)
-                    }}
+                    onClick={() => setMicOn((v) => !v)}
                     aria-label="Toggle microphone"
                   />
                 }
@@ -161,7 +284,7 @@ export function AnnaHome() {
                 <Mic className="size-4" />
               </TooltipTrigger>
               <TooltipContent>
-                {micOn ? "Mute mic" : "Unmute mic"}
+                {micOn ? "Mute mic (Anam STT)" : "Unmute mic (Anam STT · ru)"}
               </TooltipContent>
             </Tooltip>
 
@@ -172,7 +295,10 @@ export function AnnaHome() {
                     type="button"
                     variant="secondary"
                     size="icon"
-                    className="size-11 shrink-0 rounded-full bg-zinc-800 text-white hover:bg-zinc-700"
+                    className={cn(
+                      "size-11 shrink-0 rounded-full bg-zinc-800 text-white hover:bg-zinc-700",
+                      chatOpen && "ring-2 ring-white/30"
+                    )}
                     onClick={() => setChatOpen(true)}
                     aria-label="Open chat"
                   />
@@ -180,11 +306,11 @@ export function AnnaHome() {
               >
                 <MessageSquare className="size-4" />
               </TooltipTrigger>
-              <TooltipContent>Чат</TooltipContent>
+              <TooltipContent>Чат → Anam</TooltipContent>
             </Tooltip>
 
             <form
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-zinc-800/90 px-4 py-1 ring-1 ring-white/5 [&_input::placeholder]:text-white/35"
+              className="order-last flex min-w-0 basis-full items-center gap-2 rounded-full bg-zinc-800/90 px-3 py-1 ring-1 ring-white/5 sm:order-0 sm:basis-auto sm:flex-1 sm:px-4 [&_input::placeholder]:text-white/35"
               onSubmit={(e) => {
                 e.preventDefault()
                 void onAsk()
@@ -193,19 +319,15 @@ export function AnnaHome() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={
-                  userName
-                    ? `Ask Anna, ${userName.split(" ")[0]}…`
-                    : "Ask Anna anything…"
-                }
-                className="h-10 border-0 border-b-0 bg-transparent text-sm text-white focus-visible:ring-0"
-                disabled={asking || !videoOn}
+                placeholder="Ask Anna…"
+                className="h-10 min-w-0 border-0 border-b-0 bg-transparent text-sm text-white focus-visible:ring-0"
+                disabled={asking || !sessionOn || !connected}
               />
               <Button
                 type="submit"
                 size="icon"
                 variant="secondary"
-                disabled={asking || !query.trim() || !videoOn}
+                disabled={asking || !query.trim() || !sessionOn || !connected}
                 className="size-9 shrink-0 rounded-full bg-zinc-700 text-white hover:bg-zinc-600"
                 aria-label="Send"
               >
@@ -227,85 +349,64 @@ export function AnnaHome() {
               >
                 <MoreHorizontal className="size-4" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-48">
-                <DropdownMenuItem onClick={() => void restart()}>
-                  Reconnect
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setChatOpen(true)}>
-                  Open chat
-                </DropdownMenuItem>
+              <DropdownMenuContent align="end" className="min-w-52">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    disabled={!sessionOn || !connected}
+                    onClick={() => void restart()}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    Reconnect
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={
+                      !sessionOn ||
+                      (phase !== "thinking" && phase !== "speaking")
+                    }
+                    onClick={() => interrupt()}
+                  >
+                    <Square className="size-3.5" />
+                    Interrupt
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setChatOpen(true)}>
+                    <MessageSquare className="size-3.5" />
+                    Open chat
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onNewChat}>
+                    <Eraser className="size-3.5" />
+                    New chat
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => {
-                    setMicOn(false)
-                    setVideoOn(false)
-                  }}
-                >
-                  Stop session
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    disabled={!sessionOn}
+                    onClick={() => void stopSession()}
+                  >
+                    Stop session
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon"
-                    className={cn(
-                      "size-11 shrink-0 rounded-full bg-zinc-800 text-white hover:bg-zinc-700",
-                      videoOn && "ring-2 ring-white/40"
-                    )}
-                    onClick={() => {
-                      setVideoOn((v) => {
-                        if (v) setMicOn(false)
-                        return !v
-                      })
-                    }}
-                    aria-label="Toggle video mode"
-                  />
-                }
-              >
-                <Video className="size-4" />
-              </TooltipTrigger>
-              <TooltipContent>
-                {videoOn ? "Stop live" : "Start live"}
-              </TooltipContent>
-            </Tooltip>
           </div>
         </div>
 
         <Sheet open={chatOpen} onOpenChange={setChatOpen}>
           <SheetContent
             side="right"
-            className="border-white/10 bg-zinc-950 text-white sm:max-w-md"
+            className="flex w-full flex-col border-white/10 bg-black text-white sm:max-w-md"
           >
             <SheetHeader>
-              <SheetTitle className="text-white">Anna · chat</SheetTitle>
+              <SheetTitle className="text-white">Anna · live chat</SheetTitle>
             </SheetHeader>
-            <div className="mt-4 flex flex-1 flex-col gap-3 overflow-y-auto pb-6">
-              {turns.length === 0 ? (
-                <p className="text-sm text-white/40">
-                  Video on → спроси текстом или включи mic. Ответ озвучивается с
-                  lip-sync.
-                </p>
-              ) : (
-                turns.map((t, i) => (
-                  <div
-                    key={`${t.role}-${i}-${t.content.slice(0, 12)}`}
-                    className={cn(
-                      "max-w-[90%] rounded-2xl px-3 py-2 text-sm",
-                      t.role === "user"
-                        ? "ml-auto bg-white/10"
-                        : "bg-zinc-900 ring-1 ring-white/10"
-                    )}
-                  >
-                    {t.content}
-                  </div>
-                ))
-              )}
-            </div>
+            <AnnaChatPanel
+              className="mt-4 min-h-0 flex-1"
+              turns={turns}
+              phase={phase}
+              connected={connected}
+              sessionOn={sessionOn}
+              onSend={(text) => onAsk(text)}
+            />
           </SheetContent>
         </Sheet>
       </div>

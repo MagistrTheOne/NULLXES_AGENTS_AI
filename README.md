@@ -23,7 +23,7 @@ npm run dev
 
 - `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
 - `DATABASE_URL` (Neon)
-- `ANAM_*`, `XAI_*` / `OPENAI_*`
+- `ANAM_*` (включая `ANAM_VOICE_ID`), `XAI_*` / `OPENAI_*`
 - `GITHUB_*`, `GOOGLE_*` (OAuth)
 
 ## DB migrate
