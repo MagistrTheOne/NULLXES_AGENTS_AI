@@ -1,14 +1,12 @@
 # NULLXES_AGENTS_AI
 
-Монорепозиторий **Anna Maria Nullxes** — Digital Executive для NULLXES.
+**Anna Maria Nullxes** — Digital Executive для NULLXES.
 
-Основной код: `frontend/nullxes_agents_frontend/`  
 Стек: Next.js 16 · Anam JS SDK · Better Auth · Neon Postgres · xAI/OpenAI.
 
 ## Quick start
 
 ```powershell
-cd frontend\nullxes_agents_frontend
 npm install
 npm run dev
 ```
@@ -19,7 +17,20 @@ npm run dev
 | http://localhost:3000/login | Вход |
 | http://localhost:3000/register | Регистрация |
 
-Секреты и `DATABASE_URL` — в `frontend/nullxes_agents_frontend/.env.local`.
+Секреты — в `.env.local` (не в git).
+
+## Env
+
+- `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
+- `DATABASE_URL` (Neon)
+- `ANAM_*`, `XAI_*` / `OPENAI_*`
+- `GITHUB_*`, `GOOGLE_*` (OAuth)
+
+## DB migrate
+
+```powershell
+echo y | .\node_modules\.bin\better-auth.cmd migrate
+```
 
 ## Владелец
 

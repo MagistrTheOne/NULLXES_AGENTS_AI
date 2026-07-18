@@ -1,35 +1,44 @@
-# Python
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Env / secrets
+# testing
+coverage/
+
+# next.js
+.next/
+out/
+build/
+
+# env / secrets
 .env
 .env.*
 !.env.example
 
-# Node / Next.js
-node_modules/
-.next/
-out/
-build/
+# vercel
 .vercel/
+
+# typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Runtime / local agent data
-backend_agents/data/live_status.json
-backend_agents/data/sessions.jsonl
-backend_agents/data/*.log
+# python (legacy)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
 
 # OS / IDE
 .DS_Store

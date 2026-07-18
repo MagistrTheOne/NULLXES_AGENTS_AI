@@ -29,7 +29,7 @@ function Marker({
     defaultTagName: "div",
     props: mergeProps<"div">(
       {
-        className: cn(markerVariants({ variant, className })),
+        className: cn(markerVariants({ variant }), className),
       },
       props
     ),
